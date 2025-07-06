@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>מחולל אקורדים לפי סולם</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f8;
+      direction: rtl;
+      text-align: center;
+      padding: 20px;
+      margin: 0;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+ 
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+
+    label, select, input[type="text"], button {
+      font-size: 16px;
+      width: 100%;
+      margin: 8px 0;
+    }
+
+    select, input[type="text"] {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-top: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 16px;
+      min-width: 600px;
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #ddd;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    th {
+      background: #f0f0f0;
+      font-weight: bold;
+    }
+
+    td input {
+      width: 100%;
+      border: none;
+      background: none;
+      text-align: center;
+      font-size: 16px;
+      padding: 0;
+    }
+
+    .capo-box {
+      margin-top: 30px;
+      background: #eef2f7;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    #copyMessage {
+      margin-top: 5px;
+      color: green;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>מחולל אקורדים לפי סולם</h1>
+
+    <label for="scaleSelect">בחר סולם:</label>
+    <select id="scaleSelect" onchange="updateTable()"></select>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>דרגה</th>
+            <th>אקורד</th>
+            <th>תפקיד משוער</th>
+          </tr>
+        </thead>
+        <tbody id="chordTable"></tbody>
+      </table>
+    </div>
+
+    <!-- כפתור העתקה -->
+    <button onclick="copyChords()">📋 העתק אקורדים</button>
+    <p id="copyMessage"></p>
+
+    <div class="capo-box">
+      <h3>חשב מיקום קאפו 🎸</h3>
+      <label for="fromScale">סולם שאתה מנגן בו:</label>
+      <select id="fromScale"></select>
+      <label for="toScale">סולם שאתה רוצה שישמע:</label>
+      <select id="toScale"></select>
+      <button onclick="calculateCapo()">חשב</button>
+      <p id="capoResult"></p>
+    </div>
+  </div>
+
+  <script>
+    const chromatic = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+    const majorPattern = [
+      ["I", "Major", "מרכז השיר"],
+      ["ii", "minor", "משמש לעומק ומעבר"],
+      ["iii", "minor", "צליל רגשי"],
+      ["IV", "Major", "אקורד מעבר"],
+      ["V", "Major", "אקורד חזק לפני חזרה"],
+      ["vi", "minor", "אקורד עצוב/חילופי בסיס"],
+      ["vii°", "diminished", "לא יציב, יוצר מתח"]
+    ];
+
+    const minorPattern = [
+      ["i", "minor", "מרכז הסולם העצוב"],
+      ["ii°", "diminished", "מתח"],
+      ["III", "Major", "תחושת תקווה"],
+      ["iv", "minor", "עומק"],
+      ["v", "minor", "מתח לפני פתרון"],
+      ["VI", "Major", "הרחבה רגשית"],
+      ["VII", "Major", "לפני חזרה לטוניקה"]
+    ];
+
+    const enharmonicMap = {
+      "Bb": "A#", "Eb": "D#", "Ab": "G#", "Db": "C#", "Gb": "F#",
+      "Bbm": "A#m", "Ebm": "D#m", "Abm": "G#m", "Dbm": "C#m", "Gbm": "F#m"
+    };
+
+    const allScales = [
+      "C","G","D","A","E","F","Bb","Eb","Ab","Db","Gb","B","F#","C#",
+      "Bm","Am","Em","Dm","Gm","Cm","Fm","Bbm","Ebm","Abm","Dbm"
+    ];
+
+    const scales = {};
+
+    function generateScale(baseNote) {
+      let note = baseNote;
+      if (!chromatic.includes(baseNote.replace('m',''))) {
+        note = enharmonicMap[baseNote];
+      }
+      if (!note) {
+        console.log(`generateScale: לא נמצא תו תקין עבור ${baseNote}`);
+        return;
+      }
+      const isMinor = baseNote.endsWith('m');
+      const steps = isMinor ? [2,1,2,2,1,2,2] : [2,2,1,2,2,2,1];
+      let index = chromatic.indexOf(note.replace('m',''));
+      const notes = [];
+      for (let step of steps) {
+        notes.push(chromatic[index % chromatic.length]);
+        index += step;
+      }
+      const pattern = isMinor ? minorPattern : majorPattern;
+      scales[baseNote] = pattern.map((p, i) => [p[0], notes[i], p[1], p[2]]);
+      console.log(`generateScale: יצר סולם עבור ${baseNote}`, scales[baseNote]);
+    }
+
+    allScales.forEach(generateScale);
+
+    function updateTable() {
+      console.log("updateTable: קורא לעדכון הטבלה");
+      const scale = document.getElementById("scaleSelect").value;
+      const tableBody = document.getElementById("chordTable");
+      tableBody.innerHTML = "";
+      if (!scales[scale]) {
+        console.log(`updateTable: הסולם ${scale} לא קיים במערך, יוצר סולם חדש`);
+        generateScale(scale);
+      }
+      if (!scales[scale]) {
+        console.warn(`updateTable: לא הצליח למצוא או ליצור סולם עבור ${scale}`);
+        return;
+      }
+      scales[scale].forEach(row => {
+        const tr = document.createElement("tr");
+
+        const degree = document.createElement("td");
+        const input1 = document.createElement("input");
+        input1.value = row[0];
+        input1.readOnly = true;
+        degree.appendChild(input1);
+        tr.appendChild(degree);
+
+        const chord = document.createElement("td");
+        const input2 = document.createElement("input");
+        const suffix = row[2] === "minor" ? "m" : row[2] === "diminished" ? "°" : "";
+        input2.value = row[1] + suffix;
+        input2.readOnly = true;
+        chord.appendChild(input2);
+        tr.appendChild(chord);
+
+        const role = document.createElement("td");
+        const input3 = document.createElement("input");
+        input3.value = row[3];
+        input3.readOnly = true;
+        role.appendChild(input3);
+        tr.appendChild(role);
+
+        tableBody.appendChild(tr);
+      });
+    }
+
+    function copyChords() {
+      console.log("copyChords: מנסה להעתיק את האקורדים");
+      const scale = document.getElementById("scaleSelect").value;
+      if (!scales[scale]) {
+        console.warn("copyChords: הסולם לא קיים, ביטול העתקה");
+        return;
+      }
+
+      const chords = scales[scale].map(row => {
+        const suffix = row[2] === "minor" ? "m" : row[2] === "diminished" ? "°" : "";
+        return row[1] + suffix;
+      });
+
+      const text = chords.join(" ");
+      navigator.clipboard.writeText(text).then(() => {
+        document.getElementById("copyMessage").innerText = "האקורדים הועתקו!";
+        setTimeout(() => document.getElementById("copyMessage").innerText = "", 3000);
+      }).catch(() => {
+        document.getElementById("copyMessage").innerText = "שגיאה בהעתקה.";
+      });
+    }
+
+    function calculateCapo() {
+      console.log("calculateCapo: מחשב את מיקום הקאפו");
+      const from = document.getElementById("fromScale").value;
+      const to = document.getElementById("toScale").value;
+
+      const fromNote = from.replace('m','').toUpperCase();
+      const toNote = to.replace('m','').toUpperCase();
+
+      const enharmonicNorm = {
+        "BB": "A#", "EB": "D#", "AB": "G#", "DB": "C#", "GB": "F#"
+      };
+
+      const fromNorm = enharmonicNorm[fromNote] || fromNote;
+      const toNorm = enharmonicNorm[toNote] || toNote;
+
+      const fromIndex = chromatic.indexOf(fromNorm);
+      const toIndex = chromatic.indexOf(toNorm);
+
+      if (fromIndex === -1 || toIndex === -1) {
+        document.getElementById("capoResult").innerText = "אירעה שגיאה בחישוב הקאפו.";
+        return;
+      }
+
+      const up = (toIndex - fromIndex + 12) % 12;
+      const down = (fromIndex - toIndex + 12) % 12;
+      const diff = up <= down ? up : -down;
+
+      const result = diff === 0
+        ? "אין צורך בקאפו - אותו סולם."
+        : diff > 0
+          ? `כדי שנשמע כמו ${to}, שים קאפו על סריג ${diff}`
+          : `כדי שנשמע כמו ${to}, הורד ${Math.abs(diff)} סריגים (או עבור לסולם נמוך יותר)`;
+
+      document.getElementById("capoResult").innerText = result;
+    }
+
+    window.onload = () => {
+      const scaleSelect = document.getElementById("scaleSelect");
+      const fromSelect = document.getElementById("fromScale");
+      const toSelect = document.getElementById("toScale");
+
+      allScales.forEach(scale => {
+        const opt = document.createElement("option");
+        opt.value = opt.text = scale;
+        scaleSelect.appendChild(opt);
+
+        if (!scale.endsWith('m')) {
+          const optFrom = document.createElement("option");
+          optFrom.value = optFrom.text = scale;
+          fromSelect.appendChild(optFrom);
+
+          const optTo = document.createElement("option");
+          optTo.value = optTo.text = scale;
+          toSelect.appendChild(optTo);
+        }
+      });
+
+      // הגדרת ערך ברירת מחדל ל-scaleSelect
+      scaleSelect.value = allScales[0];
+
+      updateTable();
+      console.log("window.onload: סיימתי לאתחל את הדף");
+    };
+  </script>
+</body>
+</html>
